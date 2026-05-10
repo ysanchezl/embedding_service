@@ -15,7 +15,11 @@ def get_model():
 
     if model is None:
         try:
-            model = SentenceTransformer(settings.model_name,  trust_remote_code=settings.trust_remote_code)
+            model = SentenceTransformer(
+                settings.model_name,
+                trust_remote_code=settings.trust_remote_code,
+                token=settings.hf_token,
+            )
         except Exception as exc:
             raise EmbeddingServiceError("Embedding model could not be loaded") from exc
 

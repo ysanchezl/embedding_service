@@ -23,16 +23,10 @@ The default model is `BAAI/bge-m3`, loaded through `sentence-transformers`.
 pip install -r requirements.txt
 ```
 
-For authenticated Hugging Face Hub downloads, set `HF_TOKEN` before starting the service:
+For authenticated Hugging Face Hub downloads, set `HF_TOKEN` in your `.env` file:
 
-```bash
-export HF_TOKEN="your_hugging_face_token"
-```
-
-On PowerShell:
-
-```powershell
-$env:HF_TOKEN="your_hugging_face_token"
+```env
+HF_TOKEN=your_hugging_face_token
 ```
 
 The token is optional for public models, but it enables better rate limits and faster downloads.
@@ -64,6 +58,8 @@ Configuration is defined in `app/core/settings.py`.
 | `model_name` | `BAAI/bge-m3` | Sentence Transformers model name. |
 | `normalize` | `true` | Whether embeddings are normalized. |
 | `max_chars` | `2000` | Maximum characters processed per text chunk. Longer chunks are truncated. |
+| `trust_remote_code` | `false` | Whether Sentence Transformers can run custom model code from the Hub. |
+| `hf_token` | `null` | Optional Hugging Face token used when loading the model. Set it as `HF_TOKEN` in `.env`. |
 
 ## API
 

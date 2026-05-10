@@ -53,3 +53,28 @@ def test_embed_texts_returns_empty_list_without_loading_model(monkeypatch):
     monkeypatch.setattr(embedding_service, "get_model", fail_get_model)
 
     assert embedding_service.embed_texts([]) == []
+
+
+def test_get_model_passes_hf_token(monkeypatch):
+    received = {}
+
+    def fake_sentence_transformer(model_name, trust_remote_code, token):
+        received["model_name"] = model_name
+        received["trust_remote_code"] = trust_remote_code
+        received["token"] = token
+        return object()
+
+    monkeypatch.setattr(embedding_service, "model", None)
+    monkeypatch.setattr(embedding_service, "SentenceTransformer", fake_sentence_transformer)
+    monkeypatch.setattr(embedding_service.settings, "model_name", "test-model")
+    monkeypatch.setattr(embedding_service.settings, "trust_remote_code", True)
+    monkeypatch.setattr(embedding_service.settings, "hf_token", "hf_test")
+
+    loaded_model = embedding_service.get_model()
+
+    assert loaded_model is embedding_service.model
+    assert received == {
+        "model_name": "test-model",
+        "trust_remote_code": True,
+        "token": "hf_test",
+    }
