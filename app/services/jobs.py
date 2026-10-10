@@ -4,16 +4,17 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from typing import Callable
 
-from app.core.settings import get_settings
-from app.services import embedding_service
-from app.services.embedding_service import EmbeddingServiceError
+from app.core.config import get_config
+from app.core.errors import EmbeddingServiceError
+from app.services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
-# runner(documents, on_progress) -> chunks
-Runner = Callable[[list[str], Callable[[int, int], None]], list[dict]]
+# runner(documents, model_alias, on_progress) -> chunks
+Runner = Callable[[list[str], str, Callable[[int, int], None]], list[dict]]
 
 
 class JobQueueFull(Exception):
@@ -23,6 +24,7 @@ class JobQueueFull(Exception):
 @dataclass
 class Job:
     id: str
+    model: str
     status: str = "pending"  # pending | running | done | failed
     done: int = 0
     total: int = 0
@@ -46,18 +48,18 @@ class JobStore:
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="embed-job")
 
-    def submit(self, documents: list[str]) -> Job:
+    def submit(self, documents: list[str], model: str) -> Job:
         with self._lock:
             self._purge_expired()
             active = sum(1 for j in self._jobs.values() if j.status in ("pending", "running"))
             if active >= self._max_pending:
                 raise JobQueueFull()
 
-            job = Job(id=uuid.uuid4().hex, created_at=time.time())
+            job = Job(id=uuid.uuid4().hex, model=model, created_at=time.time())
             self._jobs[job.id] = job
             snapshot = replace(job)
 
-        self._executor.submit(self._run, job.id, documents)
+        self._executor.submit(self._run, job.id, documents, model)
         return snapshot
 
     def get(self, job_id: str) -> Job | None:
@@ -85,14 +87,14 @@ class JobStore:
                 for name, value in fields.items():
                     setattr(job, name, value)
 
-    def _run(self, job_id: str, documents: list[str]) -> None:
+    def _run(self, job_id: str, documents: list[str], model: str) -> None:
         self._update(job_id, status="running")
 
         def on_progress(done: int, total: int) -> None:
             self._update(job_id, done=done, total=total)
 
         try:
-            chunks = self._runner(documents, on_progress)
+            chunks = self._runner(documents, model, on_progress)
         except EmbeddingServiceError as exc:
             self._update(job_id, status="failed", error=str(exc), finished_at=time.time())
         except Exception:
@@ -102,11 +104,14 @@ class JobStore:
             self._update(job_id, status="done", chunks=chunks, finished_at=time.time())
 
 
-_settings = get_settings()
-
-job_store = JobStore(
-    # Looked up at call time so the real function can be swapped in tests.
-    runner=lambda documents, on_progress: embedding_service.embed_documents(documents, on_progress),
-    max_pending=_settings.max_pending_jobs,
-    ttl_seconds=_settings.job_ttl_seconds,
-)
+@lru_cache
+def get_job_store() -> JobStore:
+    jobs = get_config().service.jobs
+    return JobStore(
+        # The service is resolved per call so it is never built just to create the store.
+        runner=lambda documents, model, on_progress: get_embedding_service().embed_documents(
+            documents, model, on_progress
+        ),
+        max_pending=jobs.max_pending,
+        ttl_seconds=jobs.ttl_seconds,
+    )

@@ -1,21 +1,36 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from app.api.routes import router
-from app.core.settings import get_settings
-from app.services.jobs import job_store
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-settings = get_settings()
+from app.api.routes import router
+from app.core.config import get_config
+from app.core.errors import EmbeddingServiceError, UnknownModelError
+from app.services.jobs import get_job_store
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    get_config()  # fail fast on invalid config/models.json or config/service.json
+    store = get_job_store()
     yield
-    job_store.shutdown()
+    store.shutdown()
 
 
 app = FastAPI(title="Embedding Service", lifespan=lifespan)
 
 app.include_router(router)
+
+
+@app.exception_handler(UnknownModelError)
+async def unknown_model_handler(_request: Request, exc: UnknownModelError):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(EmbeddingServiceError)
+async def embedding_error_handler(_request: Request, exc: EmbeddingServiceError):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
 
 @app.get("/")
 def root():
