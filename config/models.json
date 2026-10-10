@@ -1,0 +1,16 @@
+{
+  "e5-small": {
+    "name": "intfloat/multilingual-e5-small",
+    "query_prefix": "query: ",
+    "passage_prefix": "passage: ",
+    "normalize": true,
+    "trust_remote_code": false,
+    "batch_size": 32,
+    "chunk_tokens": null,
+    "chunk_overlap_ratio": 0.12,
+    "metadata": {
+      "description": "Multilingual, ~470 MB, runs well on CPU. Needs query/passage prefixes.",
+      "languages": ["es", "en", "multilingual"]
+    }
+  }
+}

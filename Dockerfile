@@ -8,9 +8,11 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 
 COPY app ./app
 COPY scripts ./scripts
+COPY config ./config
 
-# The model is NOT baked into the image: it lives in MODEL_DIR, which should be a
-# persistent volume. It is downloaded on first start and reused afterwards.
+# Models are NOT baked into the image: they live in MODEL_DIR, which should be a
+# persistent volume. The default model is downloaded on first start and reused afterwards.
+# To change models, mount your own config over /app/config.
 ENV MODEL_DIR=/models
 VOLUME /models
 

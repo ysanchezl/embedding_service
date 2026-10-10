@@ -1,17 +1,23 @@
-from typing import Annotated, List
+from typing import Annotated, Any, List
 
 from pydantic import BaseModel, Field, StringConstraints
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+ModelKey = Annotated[
+    str | None,
+    Field(default=None, description="Model alias from config/models.json. Omit to use the default model."),
+]
 
 
 class JobRequest(BaseModel):
-    # Size limits are enforced in the route (413), driven by settings.
+    # Size limits are enforced in the route (413), driven by config/service.json.
     documents: List[Text] = Field(..., min_length=1)
+    model: ModelKey = None
 
 
 class QueryRequest(BaseModel):
-    texts: List[Text] = Field(..., min_length=1, max_length=64)
+    texts: List[Text] = Field(..., min_length=1)
+    model: ModelKey = None
 
 
 class QueryResponse(BaseModel):
@@ -24,6 +30,7 @@ class QueryResponse(BaseModel):
 class JobCreated(BaseModel):
     job_id: str
     status: str
+    model: str
 
 
 class JobProgress(BaseModel):
@@ -41,12 +48,27 @@ class ChunkResult(BaseModel):
 class JobStatus(BaseModel):
     job_id: str
     status: str
+    model: str
     progress: JobProgress
-    model: str | None = None
     dimensions: int | None = None
     count: int | None = None
     chunks: List[ChunkResult] | None = None
     error: str | None = None
+
+
+class ModelInfo(BaseModel):
+    key: str
+    name: str
+    default: bool
+    downloaded: bool
+    loaded: bool
+    dimensions: int | None
+    metadata: dict[str, Any]
+
+
+class ModelsResponse(BaseModel):
+    default: str
+    models: List[ModelInfo]
 
 
 class ErrorResponse(BaseModel):

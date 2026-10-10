@@ -1,0 +1,15 @@
+{
+  "default_model": "e5-small",
+  "model_dir": "./models",
+  "max_loaded_models": 2,
+  "limits": {
+    "max_documents": 100,
+    "max_document_chars": 2000000,
+    "max_total_chars": 10000000,
+    "max_query_texts": 64
+  },
+  "jobs": {
+    "max_pending": 20,
+    "ttl_seconds": 3600
+  }
+}
