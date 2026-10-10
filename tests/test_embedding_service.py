@@ -1,80 +1,168 @@
-from app.services import embedding_service
+import logging
+
+import pytest
+
+from app.core.errors import EmbeddingServiceError, UnknownModelError
+from app.services.embedding_service import EmbeddingService
+from app.services.model_registry import ModelRegistry
+from tests.fakes import FakeSentenceTransformer
+
+MODELS = {
+    "alpha": {"name": "org/alpha", "query_prefix": "query: ", "passage_prefix": "passage: ", "batch_size": 4,
+              "chunk_overlap_ratio": 0.0},
+    "beta": {"name": "org/beta", "normalize": False, "batch_size": 2, "chunk_overlap_ratio": 0.0},
+}
 
 
-class FakeVectors:
-    def __init__(self, values):
-        self.values = values
+@pytest.fixture
+def setup(downloaded):
+    def build(models=None, **service):
+        registry = ModelRegistry(downloaded(models=models or MODELS, service=service), loader=FakeSentenceTransformer)
+        return EmbeddingService(registry), registry
 
-    def tolist(self):
-        return self.values
-
-
-class FakeModel:
-    def __init__(self):
-        self.received_texts = None
-        self.received_normalize = None
-
-    def encode(self, texts, normalize_embeddings):
-        self.received_texts = texts
-        self.received_normalize = normalize_embeddings
-        return FakeVectors([[1.0, 2.0]])
+    return build
 
 
-def test_embed_texts_truncates_and_normalizes(monkeypatch):
-    fake_model = FakeModel()
-
-    monkeypatch.setattr(embedding_service, "get_model", lambda: fake_model)
-    monkeypatch.setattr(embedding_service.settings, "max_chars", 4)
-    monkeypatch.setattr(embedding_service.settings, "normalize", True)
-
-    result = embedding_service.embed_texts(["abcdef"])
-
-    assert result == [[1.0, 2.0]]
-    assert fake_model.received_texts == ["abcd"]
-    assert fake_model.received_normalize is True
+def encoded(registry, alias):
+    return registry.get(alias).model.encoded
 
 
-def test_embed_texts_accepts_single_string(monkeypatch):
-    fake_model = FakeModel()
-
-    monkeypatch.setattr(embedding_service, "get_model", lambda: fake_model)
-    monkeypatch.setattr(embedding_service.settings, "max_chars", 100)
-
-    result = embedding_service.embed_texts("single chunk")
-
-    assert result == [[1.0, 2.0]]
-    assert fake_model.received_texts == ["single chunk"]
+# --- embed_texts --------------------------------------------------------
 
 
-def test_embed_texts_returns_empty_list_without_loading_model(monkeypatch):
-    def fail_get_model():
-        raise AssertionError("model should not be loaded")
+def test_passage_prefix_by_default_and_query_prefix_for_queries(setup):
+    service, registry = setup()
 
-    monkeypatch.setattr(embedding_service, "get_model", fail_get_model)
+    service.embed_texts(["hola"])
+    service.embed_texts(["hola"], is_query=True)
 
-    assert embedding_service.embed_texts([]) == []
+    assert encoded(registry, "alpha") == [["passage: hola"], ["query: hola"]]
 
 
-def test_get_model_passes_hf_token(monkeypatch):
-    received = {}
+def test_model_without_prefixes_gets_none(setup):
+    service, registry = setup()
 
-    def fake_sentence_transformer(model_name, trust_remote_code, token):
-        received["model_name"] = model_name
-        received["trust_remote_code"] = trust_remote_code
-        received["token"] = token
-        return object()
+    service.embed_texts(["hola"], model="beta")
+    service.embed_texts(["hola"], model="beta", is_query=True)
 
-    monkeypatch.setattr(embedding_service, "model", None)
-    monkeypatch.setattr(embedding_service, "SentenceTransformer", fake_sentence_transformer)
-    monkeypatch.setattr(embedding_service.settings, "model_name", "test-model")
-    monkeypatch.setattr(embedding_service.settings, "trust_remote_code", True)
-    monkeypatch.setattr(embedding_service.settings, "hf_token", "hf_test")
+    assert encoded(registry, "beta") == [["hola"], ["hola"]]
 
-    loaded_model = embedding_service.get_model()
 
-    assert loaded_model is embedding_service.model
-    assert received == {
-        "model_name": "test-model",
-        "trust_remote_code": True,
-        "token": "hf_test",
-    }
+def test_each_model_uses_its_own_options(setup):
+    service, registry = setup()
+
+    service.embed_texts(["x"], model="alpha")
+    service.embed_texts(["x"], model="beta")
+
+    assert registry.get("alpha").model.options == [{"normalize": True, "batch_size": 4}]
+    assert registry.get("beta").model.options == [{"normalize": False, "batch_size": 2}]
+
+
+def test_embed_texts_accepts_single_string_and_empty_list(setup):
+    service, registry = setup()
+
+    assert service.embed_texts("single") == [[2.0]]
+    assert service.embed_texts([]) == []
+    assert len(encoded(registry, "alpha")) == 1  # the empty call never reached the model
+
+
+def test_unknown_model_raises(setup):
+    service, _ = setup()
+
+    with pytest.raises(UnknownModelError):
+        service.embed_texts(["x"], model="nope")
+
+
+def test_encode_failure_is_logged_and_wrapped(setup, caplog):
+    service, registry = setup()
+
+    def boom(*_a, **_k):
+        raise RuntimeError("out of memory")
+
+    registry.get("alpha").model.encode = boom
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(EmbeddingServiceError, match="could not be generated"):
+            service.embed_texts(["x"])
+
+    assert "out of memory" in caplog.text
+
+
+# --- embed_documents ----------------------------------------------------
+
+
+def words(n):
+    return " ".join(f"w{i}" for i in range(n))
+
+
+def test_chunk_size_comes_from_the_model(setup):
+    service, _ = setup()
+
+    result = service.embed_documents([words(100)])
+
+    assert len(result) > 1
+    assert all(len(c["text"].split()) <= 18 for c in result)  # 21 - 2 special - 1 prefix
+
+
+def test_model_without_prefix_gets_more_room_per_chunk(setup):
+    service, _ = setup()
+
+    result = service.embed_documents([words(100)], model="beta")
+
+    assert max(len(c["text"].split()) for c in result) == 19  # 21 - 2 special, no prefix
+
+
+def test_chunk_tokens_setting_overrides_the_model(setup):
+    models = {"alpha": {**MODELS["alpha"], "chunk_tokens": 10}}
+    service, _ = setup(models=models)
+
+    result = service.embed_documents([words(100)])
+
+    assert all(len(c["text"].split()) <= 10 - 2 - 1 for c in result)
+
+
+def test_document_and_chunk_positions(setup):
+    service, _ = setup()
+
+    result = service.embed_documents([words(40), "corto"])
+
+    assert [(c["document_index"], c["chunk_index"]) for c in result] == [(0, 0), (0, 1), (0, 2), (1, 0)]
+    assert result[-1]["text"] == "corto"
+    assert all("embedding" in c for c in result)
+
+
+def test_chunks_are_embedded_with_prefix_in_batches_of_the_model(setup):
+    service, registry = setup()
+
+    result = service.embed_documents([words(40)])
+
+    batches = encoded(registry, "alpha")
+    assert [len(b) for b in batches] == [3]  # 3 chunks, batch_size 4
+    assert all(text.startswith("passage: ") for text in batches[0])
+    assert len(result) == 3
+
+
+def test_batches_follow_the_models_batch_size_and_report_progress(setup):
+    service, registry = setup()
+    progress = []
+
+    service.embed_documents([words(40)], model="beta", on_progress=lambda d, t: progress.append((d, t)))
+
+    assert [len(b) for b in encoded(registry, "beta")] == [2, 1]
+    assert progress == [(2, 3), (3, 3)]
+
+
+def test_blank_documents_are_skipped(setup):
+    service, _ = setup()
+
+    result = service.embed_documents(["   ", "hola"])
+
+    assert [(c["document_index"], c["text"]) for c in result] == [(1, "hola")]
+
+
+def test_prefix_longer_than_chunk_size_is_an_error(setup):
+    models = {"alpha": {**MODELS["alpha"], "chunk_tokens": 3}}  # 3 - 2 special - 1 prefix = 0
+    service, _ = setup(models=models)
+
+    with pytest.raises(EmbeddingServiceError, match="smaller than"):
+        service.embed_documents(["hola"])
