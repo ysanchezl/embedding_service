@@ -122,3 +122,70 @@ def test_bin_weights_are_kept_when_repo_has_no_safetensors(run):
     call(files=["pytorch_model.bin"])
 
     assert "pytorch_model*.bin" not in calls[0]["ignore_patterns"]
+
+
+# --- API models ---------------------------------------------------------
+
+API = {
+    "provider": "openai",
+    "name": "remote-embed",
+    "base_url": "https://api.example.com/v1",
+    "api_key_env": "KEY",
+    "chunk_tokens": 100,
+}
+
+
+@pytest.fixture
+def run_mixed(monkeypatch, downloaded):
+    """A config with one local and one API model; the default is selectable."""
+    calls = []
+
+    def setup(default):
+        config = downloaded(models={"local": {"name": "org/local"}, "remote": API}, service={"default_model": default})
+        config.model_path("local").rmdir()
+        env = type("Env", (), {"hf_token": None})()
+        monkeypatch.setattr(download_model, "get_config", lambda: config)
+        monkeypatch.setattr(download_model, "get_env", lambda: env)
+        monkeypatch.setattr(download_model, "snapshot_download", lambda **kw: calls.append(kw))
+        monkeypatch.setattr(download_model, "HfApi", lambda: FakeApi(["model.safetensors"]))
+        return download_model.main
+
+    return setup, calls
+
+
+def test_api_default_model_downloads_nothing(run_mixed):
+    setup, calls = run_mixed
+    main = setup(default="remote")
+
+    main([])
+
+    assert calls == []
+
+
+def test_requesting_an_api_alias_downloads_nothing_and_succeeds(run_mixed):
+    setup, calls = run_mixed
+    main = setup(default="local")
+
+    main(["--model", "remote"])
+
+    assert calls == []
+
+
+def test_all_downloads_only_local_models(run_mixed):
+    setup, calls = run_mixed
+    main = setup(default="remote")
+
+    main(["--all"])
+
+    assert downloaded_repos(calls) == ["org/local"]
+
+
+def test_missing_huggingface_hub_is_a_clear_error_only_when_a_download_is_needed(run_mixed, monkeypatch):
+    setup, calls = run_mixed
+    main = setup(default="local")
+    monkeypatch.setattr(download_model, "snapshot_download", None)
+
+    with pytest.raises(SystemExit, match="requirements-local.txt"):
+        main([])
+
+    main(["--model", "remote"])  # an API alias still works without the library

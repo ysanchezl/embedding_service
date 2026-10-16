@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.config import AppConfig, get_config
+from app.core.security import require_api_key
 from app.schemas.embedding import (
     ErrorResponse,
     JobCreated,
@@ -14,7 +15,7 @@ from app.services.embedding_service import EmbeddingService, get_embedding_servi
 from app.services.jobs import JobQueueFull, JobStore, get_job_store
 from app.services.model_registry import ModelRegistry, get_registry
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_key)])
 
 UNKNOWN_MODEL = {422: {"model": ErrorResponse, "description": "Invalid payload or unknown model alias"}}
 

@@ -127,3 +127,128 @@ def test_error_message_has_no_empty_location(config_dir):
 
     assert ": : " not in str(error.value)
     assert "Value error" not in str(error.value)
+
+
+# --- providers ----------------------------------------------------------
+
+OPENAI = {
+    "provider": "openai",
+    "name": "text-embedding-3-small",
+    "base_url": "https://api.example.com/v1",
+    "api_key_env": "EXAMPLE_API_KEY",
+    "chunk_tokens": 512,
+}
+
+
+def with_models(config_dir, models, default="alpha"):
+    write(config_dir, "models.json", models)
+    write(config_dir, "service.json", {"default_model": default})
+    return load_config(config_dir)
+
+
+def test_models_are_local_sentence_transformers_by_default(config_dir):
+    config = load_config(config_dir)
+
+    assert config.models["alpha"].provider == "sentence-transformers"
+    assert config.is_local("alpha")
+
+
+def test_openai_compatible_model_loads_with_its_own_fields(config_dir):
+    extra = {**OPENAI, "dimensions": 256, "chars_per_token": 4, "timeout_seconds": 10, "max_retries": 1,
+             "query_prefix": "q: "}
+    config = with_models(config_dir, {"alpha": extra})
+    model = config.models["alpha"]
+
+    assert model.provider == "openai"
+    assert (model.base_url, model.api_key_env, model.dimensions) == ("https://api.example.com/v1", "EXAMPLE_API_KEY", 256)
+    assert (model.chars_per_token, model.timeout_seconds, model.max_retries) == (4, 10, 1)
+    assert model.query_prefix == "q: "
+    assert not config.is_local("alpha")
+
+
+def test_openai_defaults(config_dir):
+    model = with_models(config_dir, {"alpha": OPENAI}).models["alpha"]
+
+    assert model.dimensions is None
+    assert model.chars_per_token == 3
+    assert model.max_retries == 3
+    assert model.normalize is True
+
+
+@pytest.mark.parametrize("missing", ["base_url", "api_key_env", "chunk_tokens", "name"])
+def test_openai_model_requires_its_fields(config_dir, missing):
+    model = {k: v for k, v in OPENAI.items() if k != missing}
+
+    with pytest.raises(ConfigError, match=missing):
+        with_models(config_dir, {"alpha": model})
+
+
+def test_local_fields_are_rejected_on_openai_models(config_dir):
+    with pytest.raises(ConfigError, match="trust_remote_code"):
+        with_models(config_dir, {"alpha": {**OPENAI, "trust_remote_code": True}})
+
+
+def test_api_fields_are_rejected_on_local_models(config_dir):
+    with pytest.raises(ConfigError, match="base_url"):
+        with_models(config_dir, {"alpha": {"name": "org/a", "base_url": "https://x"}})
+
+
+def test_unknown_provider_is_rejected(config_dir):
+    with pytest.raises(ConfigError, match="weird"):
+        with_models(config_dir, {"alpha": {**OPENAI, "provider": "weird"}})
+
+
+def test_base_url_is_normalized_and_validated(config_dir):
+    model = with_models(config_dir, {"alpha": {**OPENAI, "base_url": "https://api.example.com/v1/"}}).models["alpha"]
+    assert model.base_url == "https://api.example.com/v1"
+
+    with pytest.raises(ConfigError, match="base_url"):
+        with_models(config_dir, {"alpha": {**OPENAI, "base_url": "api.example.com"}})
+
+
+def test_chars_per_token_must_be_positive(config_dir):
+    with pytest.raises(ConfigError, match="chars_per_token"):
+        with_models(config_dir, {"alpha": {**OPENAI, "chars_per_token": 0}})
+
+
+def test_model_path_only_exists_for_local_models(config_dir):
+    config = with_models(config_dir, {"alpha": OPENAI})
+
+    with pytest.raises(ValueError, match="not a local model"):
+        config.model_path("alpha")
+
+
+def test_default_model_can_be_an_api_model(config_dir):
+    config = with_models(config_dir, {"api": OPENAI, "alpha": {"name": "org/a"}}, default="api")
+
+    assert config.service.default_model == "api"
+
+
+# --- api keys -----------------------------------------------------------
+
+
+def test_api_key_comes_from_the_environment(monkeypatch):
+    from app.core.config import get_api_key
+
+    monkeypatch.setenv("SOME_KEY", "from-env")
+
+    assert get_api_key("SOME_KEY") == "from-env"
+
+
+def test_api_key_falls_back_to_the_dotenv_file(monkeypatch, tmp_path):
+    from app.core.config import get_api_key
+
+    monkeypatch.delenv("SOME_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text('SOME_KEY="from-dotenv"\n')
+
+    assert get_api_key("SOME_KEY") == "from-dotenv"
+
+
+def test_missing_api_key_is_none(monkeypatch, tmp_path):
+    from app.core.config import get_api_key
+
+    monkeypatch.delenv("SOME_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert get_api_key("SOME_KEY") is None
