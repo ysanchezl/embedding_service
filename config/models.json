@@ -1,4 +1,29 @@
 {
+  "openrouter-bge-m3": {
+    "provider": "openai",
+    "name": "baai/bge-m3",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "chunk_tokens": 512,
+    "batch_size": 32,
+    "metadata": {
+      "description": "BAAI bge-m3 hosted by OpenRouter. Multilingual (good for Spanish), 1024 dimensions, ~8K context. Needs no prefixes. Texts are sent to OpenRouter."
+    }
+  },
+  "groq-nomic": {
+    "provider": "openai",
+    "name": "nomic-embed-text-v1_5",
+    "base_url": "https://api.groq.com/openai/v1",
+    "api_key_env": "GROQ_API_KEY",
+    "query_prefix": "search_query: ",
+    "passage_prefix": "search_document: ",
+    "chunk_tokens": 512,
+    "batch_size": 32,
+    "metadata": {
+      "description": "Hosted by Groq through its OpenAI-compatible API. No local memory needed. Texts are sent to Groq.",
+      "note": "Nomic v1.5 is mainly an English model: check quality on Spanish before relying on it."
+    }
+  },
   "e5-small": {
     "name": "intfloat/multilingual-e5-small",
     "query_prefix": "query: ",
@@ -9,8 +34,12 @@
     "chunk_tokens": null,
     "chunk_overlap_ratio": 0.12,
     "metadata": {
-      "description": "Multilingual, ~470 MB, runs well on CPU. Needs query/passage prefixes.",
-      "languages": ["es", "en", "multilingual"]
+      "description": "Local, multilingual, ~470 MB on disk and ~1 GB of RAM. Needs requirements-local.txt and a downloaded model.",
+      "languages": [
+        "es",
+        "en",
+        "multilingual"
+      ]
     }
   }
 }

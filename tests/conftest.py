@@ -37,7 +37,8 @@ def downloaded(make_config):
     def build(**kwargs):
         config = make_config(**kwargs)
         for alias in config.models:
-            config.model_path(alias).mkdir(parents=True, exist_ok=True)
+            if config.is_local(alias):  # API models have nothing on disk
+                config.model_path(alias).mkdir(parents=True, exist_ok=True)
         return config
 
     return build

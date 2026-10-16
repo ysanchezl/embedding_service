@@ -1,0 +1,5 @@
+# Only needed to run models locally (provider "sentence-transformers").
+# An API-only deployment can install just requirements.txt and skips ~1 GB of torch.
+-r requirements.txt
+sentence-transformers==5.4.1
+torch==2.11.0

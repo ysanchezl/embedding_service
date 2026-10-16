@@ -24,7 +24,7 @@ def setup(downloaded):
 
 
 def encoded(registry, alias):
-    return registry.get(alias).model.encoded
+    return registry.get(alias).backend.model.encoded
 
 
 # --- embed_texts --------------------------------------------------------
@@ -54,8 +54,8 @@ def test_each_model_uses_its_own_options(setup):
     service.embed_texts(["x"], model="alpha")
     service.embed_texts(["x"], model="beta")
 
-    assert registry.get("alpha").model.options == [{"normalize": True, "batch_size": 4}]
-    assert registry.get("beta").model.options == [{"normalize": False, "batch_size": 2}]
+    assert registry.get("alpha").backend.model.options == [{"normalize": True, "batch_size": 4}]
+    assert registry.get("beta").backend.model.options == [{"normalize": False, "batch_size": 2}]
 
 
 def test_embed_texts_accepts_single_string_and_empty_list(setup):
@@ -79,7 +79,7 @@ def test_encode_failure_is_logged_and_wrapped(setup, caplog):
     def boom(*_a, **_k):
         raise RuntimeError("out of memory")
 
-    registry.get("alpha").model.encode = boom
+    registry.get("alpha").backend.model.encode = boom
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(EmbeddingServiceError, match="could not be generated"):
@@ -166,3 +166,55 @@ def test_prefix_longer_than_chunk_size_is_an_error(setup):
 
     with pytest.raises(EmbeddingServiceError, match="smaller than"):
         service.embed_documents(["hola"])
+
+
+# --- API models through the same service ---------------------------------
+
+
+def test_documents_are_chunked_and_embedded_through_an_api_model(downloaded):
+    """The service works unchanged with a remote model: only config differs."""
+    import json
+
+    import httpx
+
+    from app.providers.openai_compatible import OpenAICompatibleBackend
+
+    requests = []
+
+    def server(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        data = [{"index": i, "embedding": [float(len(t))]} for i, t in enumerate(body["input"])]
+        return httpx.Response(200, json={"data": data})
+
+    def factory(alias, cfg, api_key):
+        client = httpx.Client(transport=httpx.MockTransport(server))
+        return OpenAICompatibleBackend(alias, cfg, api_key, client=client)
+
+    config = downloaded(
+        models={
+            "remote": {
+                "provider": "openai",
+                "name": "remote-embed",
+                "base_url": "https://api.example.com/v1",
+                "api_key_env": "KEY",
+                "passage_prefix": "doc: ",
+                "chunk_tokens": 20,
+                "chars_per_token": 1,
+                "chunk_overlap_ratio": 0,
+                "batch_size": 2,
+                "normalize": False,
+            }
+        }
+    )
+    service = EmbeddingService(ModelRegistry(config, key_lookup=lambda _: "secret", remote_factory=factory))
+    text = " ".join(f"w{i:02d}" for i in range(30))  # 30 words of 3 chars, 119 chars in total
+
+    result = service.embed_documents([text])
+
+    assert len(result) > 1
+    assert all(len(c["text"]) <= 20 - len("doc: ") for c in result)  # estimate: 1 char = 1 token, minus the prefix
+    sent = [t for body in requests for t in body["input"]]
+    assert all(t.startswith("doc: ") for t in sent)
+    assert [len(b["input"]) for b in requests][0] == 2  # batch_size
+    assert " ".join(c["text"] for c in result) == text  # nothing lost

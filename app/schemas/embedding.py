@@ -59,9 +59,10 @@ class JobStatus(BaseModel):
 class ModelInfo(BaseModel):
     key: str
     name: str
+    provider: str
     default: bool
-    downloaded: bool
-    loaded: bool
+    downloaded: bool | None  # null for API models: nothing to download
+    loaded: bool | None  # null for API models: nothing kept in memory
     dimensions: int | None
     metadata: dict[str, Any]
 
