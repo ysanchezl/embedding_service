@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
-    """Produces embeddings with any model known to the registry."""
+    """Produces embeddings with any model known to the registry, local or remote."""
 
     def __init__(self, registry: ModelRegistry):
         self._registry = registry
@@ -42,14 +42,11 @@ class EmbeddingService:
         """
         loaded = self._registry.get(model)
         cfg = loaded.config
-        tokenizer = loaded.model.tokenizer
+        backend = loaded.backend
 
-        def count_tokens(units: list[str]) -> list[int]:
-            return [len(ids) for ids in tokenizer(units, add_special_tokens=False)["input_ids"]]
-
-        special = getattr(tokenizer, "num_special_tokens_to_add", lambda pair=False: 0)(False)
-        prefix_tokens = count_tokens([cfg.passage_prefix])[0] if cfg.passage_prefix else 0
-        max_tokens = (cfg.chunk_tokens or loaded.model.max_seq_length) - special - prefix_tokens
+        prefix_tokens = backend.count_tokens([cfg.passage_prefix])[0] if cfg.passage_prefix else 0
+        limit = cfg.chunk_tokens or backend.input_limit
+        max_tokens = (limit or 0) - backend.special_tokens - prefix_tokens
         if max_tokens < 1:
             raise EmbeddingServiceError(f"Chunk size of model '{loaded.alias}' is smaller than its prefix")
         overlap = int(max_tokens * cfg.chunk_overlap_ratio)
@@ -57,7 +54,7 @@ class EmbeddingService:
         chunks = [
             {"document_index": d, "chunk_index": c, "text": text}
             for d, document in enumerate(documents)
-            for c, text in enumerate(chunk_text(document, count_tokens, max_tokens, overlap))
+            for c, text in enumerate(chunk_text(document, backend.count_tokens, max_tokens, overlap))
         ]
 
         # Similar lengths per batch means less padding.
@@ -77,16 +74,12 @@ class EmbeddingService:
     @staticmethod
     def _encode(loaded: LoadedModel, texts: list[str]) -> list[list[float]]:
         try:
-            vectors = loaded.model.encode(
-                texts,
-                normalize_embeddings=loaded.config.normalize,
-                batch_size=loaded.config.batch_size,
-            )
+            return loaded.backend.encode(texts)
+        except EmbeddingServiceError:
+            raise  # already logged and worded for clients by the backend
         except Exception as exc:
             logger.exception("Embeddings could not be generated with model %r", loaded.alias)
             raise EmbeddingServiceError("Embeddings could not be generated") from exc
-
-        return vectors.tolist()
 
 
 @lru_cache

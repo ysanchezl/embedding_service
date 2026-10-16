@@ -1,17 +1,21 @@
-"""Download embedding models into the model folder (service.json: model_dir).
+"""Download local embedding models into the model folder (service.json: model_dir).
 
 Usage:
     python -m scripts.download_model                  # the default model
     python -m scripts.download_model --model bge-m3   # one configured alias
-    python -m scripts.download_model --all            # every model in config/models.json
+    python -m scripts.download_model --all            # every local model in config/models.json
     python -m scripts.download_model --force          # download again even if present
 
 Models already on disk are skipped, so it is safe to run on every start.
+API models (provider "openai") have nothing to download and are skipped.
 """
 import argparse
 import logging
 
-from huggingface_hub import HfApi, snapshot_download
+try:
+    from huggingface_hub import HfApi, snapshot_download
+except ImportError:  # API-only deployments do not install it
+    HfApi = snapshot_download = None
 
 from app.core.config import get_config, get_env
 
@@ -24,12 +28,21 @@ def is_downloaded(target) -> bool:
 
 
 def download(alias: str, config, token: str | None, force: bool) -> None:
+    if not config.is_local(alias):
+        logger.info("Model %s is served through an API, nothing to download", alias)
+        return
+
     target = config.model_path(alias)
     name = config.models[alias].name
 
     if is_downloaded(target) and not force:
         logger.info("Model %s (%s) already at %s, skipping", alias, name, target)
         return
+
+    if snapshot_download is None:
+        raise SystemExit(
+            f"Cannot download '{alias}': huggingface_hub is not installed. Install requirements-local.txt"
+        )
 
     logger.info("Downloading %s (%s) to %s", alias, name, target)
 
@@ -47,7 +60,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--model", metavar="ALIAS", help="alias from config/models.json")
-    selection.add_argument("--all", action="store_true", help="download every configured model")
+    selection.add_argument("--all", action="store_true", help="download every local model")
     parser.add_argument("--force", action="store_true", help="download even if already present")
     args = parser.parse_args(argv)
 

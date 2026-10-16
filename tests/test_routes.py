@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_config
 from app.core.errors import EmbeddingServiceError
+from app.core.security import require_api_key
 from app.main import app
 from app.services import jobs
 from app.services.embedding_service import get_embedding_service
@@ -55,6 +56,7 @@ def api(downloaded):
     registry = ModelRegistry(config, loader=FakeSentenceTransformer)
     state = {"store": FakeJobStore(), "service": FakeEmbeddingService()}
 
+    app.dependency_overrides[require_api_key] = lambda: None  # auth has its own tests (test_security.py)
     app.dependency_overrides[get_config] = lambda: config
     app.dependency_overrides[get_registry] = lambda: registry
     app.dependency_overrides[get_job_store] = lambda: state["store"]
@@ -242,6 +244,7 @@ def test_models_lists_configured_models_and_default(api):
     assert body["models"][0] == {
         "key": "alpha",
         "name": "org/alpha",
+        "provider": "sentence-transformers",
         "default": True,
         "downloaded": True,
         "loaded": True,
