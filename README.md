@@ -202,6 +202,9 @@ Authorization: Bearer <key>
 
 ## API
 
+**Integrating another application with this service?** See the [client integration guide](docs/uso-cliente.md) (in
+Spanish): auth, exact request/response formats, limits, errors and best practices, in one document.
+
 All endpoints below need the `Authorization` header (except the health check).
 
 All endpoints that embed accept an optional `"model": "<alias>"`. An unknown alias returns `422` and lists the valid ones.

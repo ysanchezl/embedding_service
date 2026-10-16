@@ -124,6 +124,9 @@ Documentación interactiva: http://127.0.0.1:8000/docs
 
 Todos los ejemplos llevan la clave en `Authorization` (aquí en la variable `$CLAVE`).
 
+> Si vas a **integrar otra aplicación** con el servicio, dale [docs/uso-cliente.md](docs/uso-cliente.md): reúne la
+> autenticación, los formatos exactos, los límites y los errores.
+
 Ver qué modelos hay:
 
 ```bash
