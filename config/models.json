@@ -1,4 +1,16 @@
 {
+  "openrouter-lfm-free": {
+    "provider": "openai",
+    "name": "liquid/lfm-2.5-embedding-350m:free",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "chunk_tokens": 400,
+    "batch_size": 32,
+    "metadata": {
+      "description": "Free embedding model hosted by OpenRouter (Liquid LFM2.5 350M). 1024 dimensions, 512-token context. Needs no credits.",
+      "note": "Free models can have low usage limits, quality in Spanish is unverified, and OpenRouter may use the data to train models. Switch default_model to openrouter-bge-m3 once the account has credits."
+    }
+  },
   "openrouter-bge-m3": {
     "provider": "openai",
     "name": "baai/bge-m3",

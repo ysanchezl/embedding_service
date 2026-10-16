@@ -9,7 +9,8 @@ nuevo) es solo editar un JSON.
 | `openai` | Cualquier servidor con el protocolo `/embeddings` de OpenAI: OpenAI, **Groq**, Mistral, Ollama, vLLM... | ~60 MB | una clave de API |
 | `sentence-transformers` (por defecto) | Un modelo de Hugging Face dentro del servicio | ~1 GB | `requirements-local.txt` y descargarlo |
 
-El modelo por defecto es `openrouter-bge-m3` (BAAI bge-m3 a través de OpenRouter, por API). **Los textos que se envían a un modelo por API salen de tu
+El modelo por defecto es `openrouter-lfm-free` (un modelo gratuito de OpenRouter, por API); `openrouter-bge-m3` (BAAI
+bge-m3, de pago) queda configurado como alternativa para cuando la cuenta de OpenRouter tenga saldo. **Los textos que se envían a un modelo por API salen de tu
 infraestructura**: revisa las condiciones de datos del proveedor antes de mandar información sensible.
 
 ## 1. Requisitos
