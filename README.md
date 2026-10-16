@@ -9,7 +9,8 @@ API endpoint) only requires editing a JSON file. Request and response formats ar
 | `openai` | Any server speaking the OpenAI `/embeddings` protocol: OpenAI, **Groq**, Mistral, Ollama, vLLM... | ~60 MB | an API key |
 | `sentence-transformers` (default) | A Hugging Face model running in the service | ~1 GB | `requirements-local.txt` and a download |
 
-The default model is `openrouter-bge-m3` (BAAI bge-m3 through OpenRouter, via API). Texts sent to an API model **leave your infrastructure**: check the
+The default model is `openrouter-lfm-free` (a free OpenRouter model, via API); `openrouter-bge-m3` (BAAI bge-m3, paid)
+is configured as the alternative for when the OpenRouter account has credits. Texts sent to an API model **leave your infrastructure**: check the
 provider's data terms before sending sensitive data.
 
 ## Features
