@@ -77,11 +77,31 @@ class OpenAICompatibleBackend:
         attempt = 0
         while True:
             retry_after = None
+            total_attempts = self._config.max_retries + 1
+            began = time.perf_counter()
             try:
                 response = self._client.post(self._url, json=payload, headers=self._headers)
             except httpx.HTTPError as exc:  # timeouts, connection errors...
                 reason = f"{type(exc).__name__}: {exc}"
+                logger.warning(
+                    "Model %r: POST /embeddings inputs=%d attempt=%d/%d failed after %.0f ms (%s)",
+                    self._alias,
+                    len(batch),
+                    attempt + 1,
+                    total_attempts,
+                    (time.perf_counter() - began) * 1000,
+                    type(exc).__name__,
+                )
             else:
+                logger.info(
+                    "Model %r: POST /embeddings inputs=%d attempt=%d/%d -> HTTP %s in %.0f ms",
+                    self._alias,
+                    len(batch),
+                    attempt + 1,
+                    total_attempts,
+                    response.status_code,
+                    (time.perf_counter() - began) * 1000,
+                )
                 if response.status_code == 200:
                     return self._parse(response, len(batch))
                 if response.status_code in (401, 403):

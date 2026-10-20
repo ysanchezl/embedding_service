@@ -154,6 +154,7 @@ Secrets and deploy paths only. See `.env.example`.
 | --- | --- |
 | `SERVICE_API_KEYS` | Keys clients must send. **Required** unless `DISABLE_AUTH=true`. |
 | `OPENROUTER_API_KEY`, `GROQ_API_KEY`, ... | One variable per API model, named by its `api_key_env`. Read from the environment or from `.env`. |
+| `LOG_LEVEL` | `INFO` (default), `DEBUG`, `WARNING` or `ERROR`. See [Logs](#logs). |
 | `HF_TOKEN` | Hugging Face token, used only to download private or gated local models. |
 | `CONFIG_DIR` | Folder with the two JSON files (default `config`). |
 | `MODEL_DIR` | Overrides `model_dir` (used by the Docker image). |
@@ -310,6 +311,33 @@ curl -X POST http://127.0.0.1:8000/embed/jobs \
 
 curl http://127.0.0.1:8000/embed/jobs/<job_id>
 ```
+
+## Logs
+
+The service writes one line per event to stdout, so they show up as-is in Render's **Logs** tab (or `docker logs`).
+Every request gets a short id, printed in brackets and returned to the client in the `X-Request-ID` header, so a client
+can quote it when reporting a problem and you can find the whole story with a search.
+
+```
+2026-10-20 10:33:10,836 INFO    [67068c17] app.request: POST /embed/query received
+2026-10-20 10:33:10,893 INFO    [67068c17] app.services.model_registry: Model 'openrouter-lfm-free' ready (provider=openai, remote API)
+2026-10-20 10:33:10,909 INFO    [67068c17] app.providers.openai_compatible: Model 'openrouter-lfm-free': POST /embeddings inputs=1 attempt=1/4 -> HTTP 200 in 16 ms
+2026-10-20 10:33:10,910 INFO    [67068c17] app.request: POST /embed/query -> 200 in 73 ms
+```
+
+What is logged:
+
+| Event | Level |
+| --- | --- |
+| Startup: default model, configured models, auth (number of keys, never the keys) and log level | `INFO` |
+| Each request: `received` and `-> status in N ms` (health checks `GET /` only at `DEBUG`) | `INFO`; `WARNING` for 4xx, `ERROR` for 5xx |
+| Why a request was refused: invalid or missing key, unknown model, limits, queue full, job not found | `WARNING` |
+| Each call to an API model: number of inputs, attempt (`2/4`), HTTP status and milliseconds; retries and timeouts | `INFO` / `WARNING` |
+| Jobs: created (documents, characters), started, done (chunks, seconds) or failed (reason) | `INFO` / `ERROR` |
+| Unhandled errors, with the full traceback | `ERROR` |
+
+Logs from the job worker show `[-]` instead of a request id: follow them by the job id. **Texts, documents, request
+bodies and credentials are never logged.** Set `LOG_LEVEL=DEBUG` to also see job progress and health checks.
 
 ## Tests
 

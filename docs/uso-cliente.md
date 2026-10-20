@@ -237,6 +237,9 @@ Mensajes habituales de `503` (y del campo `error` de un job `failed`):
   con un pequeño solape con el siguiente.
 - **No envíes datos que no deban salir de tu infraestructura** si el modelo se sirve por API de un tercero: los textos se
   envían a ese proveedor. Consúltalo con quien opera el servicio.
+- **Guarda el `X-Request-ID`** que devuelve cada respuesta (una cadena corta como `67068c17`). Si algo falla, quien opera
+  el servicio lo busca en sus logs y ve toda la historia de esa petición. Inclúyelo al reportar un problema, junto con la
+  hora y el `job_id` si lo hay.
 
 ## Ejemplos
 

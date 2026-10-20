@@ -42,6 +42,13 @@ def check_auth_config(env: EnvSettings) -> None:
         raise ConfigError(f"Every key in SERVICE_API_KEYS must be at least {MIN_KEY_LENGTH} characters long")
 
 
+def describe_auth(env: EnvSettings) -> str:
+    if env.disable_auth:
+        return "DISABLED"
+    count = len(_configured_keys(env))
+    return f"enabled ({count} {'key' if count == 1 else 'keys'})"
+
+
 def require_api_key(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     env: EnvSettings = Depends(get_env),
@@ -56,4 +63,6 @@ def require_api_key(
         valid |= hmac.compare_digest(supplied, key.encode())
 
     if not valid:
+        reason = "invalid API key" if supplied else "no API key supplied (missing or not a Bearer token)"
+        logger.warning("Request rejected: %s", reason)  # never log the key itself
         raise HTTPException(401, "Invalid or missing API key", headers={"WWW-Authenticate": "Bearer"})
