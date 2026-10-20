@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.config import AppConfig, get_config
@@ -15,7 +17,16 @@ from app.services.embedding_service import EmbeddingService, get_embedding_servi
 from app.services.jobs import JobQueueFull, JobStore, get_job_store
 from app.services.model_registry import ModelRegistry, get_registry
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(dependencies=[Depends(require_api_key)])
+
+
+def _reject(status_code: int, detail: str, reason: str | None = None) -> HTTPException:
+    """Log why a request was refused (the client only sees `detail`), and build the error."""
+    logger.warning("Request rejected (%s): %s", status_code, reason or detail)
+    return HTTPException(status_code, detail)
+
 
 UNKNOWN_MODEL = {422: {"model": ErrorResponse, "description": "Invalid payload or unknown model alias"}}
 
@@ -41,18 +52,18 @@ def create_job(
     documents = req.documents
 
     if len(documents) > limits.max_documents:
-        raise HTTPException(413, f"Too many documents (max {limits.max_documents})")
+        raise _reject(413, f"Too many documents (max {limits.max_documents})")
     if any(len(d) > limits.max_document_chars for d in documents):
-        raise HTTPException(413, f"A document exceeds {limits.max_document_chars} characters")
+        raise _reject(413, f"A document exceeds {limits.max_document_chars} characters")
     if sum(len(d) for d in documents) > limits.max_total_chars:
-        raise HTTPException(413, f"Request exceeds {limits.max_total_chars} characters in total")
+        raise _reject(413, f"Request exceeds {limits.max_total_chars} characters in total")
 
     model = registry.resolve(req.model)  # unknown alias -> 422 (see main.py)
 
     try:
         job = store.submit(documents, model)
     except JobQueueFull as exc:
-        raise HTTPException(429, "Too many pending jobs, try again later") from exc
+        raise _reject(429, "Too many pending jobs, try again later", "the job queue is full") from exc
 
     return {"job_id": job.id, "status": job.status, "model": job.model}
 
@@ -65,7 +76,7 @@ def create_job(
 def get_job(job_id: str, store: JobStore = Depends(get_job_store)):
     job = store.get(job_id)
     if job is None:
-        raise HTTPException(404, "Job not found or expired")
+        raise _reject(404, "Job not found or expired", f"job {job_id} not found (unknown, expired or lost in a restart)")
 
     response = {
         "job_id": job.id,
@@ -96,7 +107,7 @@ def embed_query(
     service: EmbeddingService = Depends(get_embedding_service),
 ):
     if len(req.texts) > config.service.limits.max_query_texts:
-        raise HTTPException(413, f"Too many texts (max {config.service.limits.max_query_texts})")
+        raise _reject(413, f"Too many texts (max {config.service.limits.max_query_texts})")
 
     model = registry.resolve(req.model)
     vectors = service.embed_texts(req.texts, model=model, is_query=True)

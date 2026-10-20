@@ -53,11 +53,20 @@ class JobStore:
             self._purge_expired()
             active = sum(1 for j in self._jobs.values() if j.status in ("pending", "running"))
             if active >= self._max_pending:
+                logger.warning("Job rejected: the queue is full (%d active jobs)", active)
                 raise JobQueueFull()
 
             job = Job(id=uuid.uuid4().hex, model=model, created_at=time.time())
             self._jobs[job.id] = job
             snapshot = replace(job)
+            logger.info(
+                "Job %s created | model=%s documents=%d chars=%d | active jobs=%d",
+                job.id,
+                model,
+                len(documents),
+                sum(len(d) for d in documents),
+                active + 1,
+            )
 
         self._executor.submit(self._run, job.id, documents, model)
         return snapshot
@@ -89,18 +98,23 @@ class JobStore:
 
     def _run(self, job_id: str, documents: list[str], model: str) -> None:
         self._update(job_id, status="running")
+        started = time.perf_counter()
+        logger.info("Job %s started | model=%s", job_id, model)
 
         def on_progress(done: int, total: int) -> None:
             self._update(job_id, done=done, total=total)
+            logger.debug("Job %s progress %d/%d", job_id, done, total)
 
         try:
             chunks = self._runner(documents, model, on_progress)
         except EmbeddingServiceError as exc:
+            logger.error("Job %s failed after %.1f s: %s", job_id, time.perf_counter() - started, exc)
             self._update(job_id, status="failed", error=str(exc), finished_at=time.time())
         except Exception:
-            logger.exception("Job %s failed unexpectedly", job_id)
+            logger.exception("Job %s failed unexpectedly after %.1f s", job_id, time.perf_counter() - started)
             self._update(job_id, status="failed", error="Internal error", finished_at=time.time())
         else:
+            logger.info("Job %s done | chunks=%d in %.1f s", job_id, len(chunks), time.perf_counter() - started)
             self._update(job_id, status="done", chunks=chunks, finished_at=time.time())
 
 

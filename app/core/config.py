@@ -40,10 +40,19 @@ class EnvSettings(BaseSettings):
     hf_token: SecretStr | None = None
     service_api_keys: SecretStr | None = None  # comma-separated keys clients must send (see core/security.py)
     disable_auth: bool = False  # local development only
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR or CRITICAL
     config_dir: str = "config"
     model_dir: str | None = None  # overrides service.json (useful in containers)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("log_level")
+    @classmethod
+    def _check_log_level(cls, value: str) -> str:
+        level = value.strip().upper()
+        if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            raise ValueError("LOG_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
+        return level
 
 
 class _Strict(BaseModel):
