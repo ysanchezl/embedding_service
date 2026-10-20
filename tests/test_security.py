@@ -148,3 +148,36 @@ def test_keys_never_appear_in_logs_or_errors(caplog):
 
     assert KEY_A not in caplog.text
     assert "short" not in str(error.value).replace("shorter", "")
+
+
+# --- logging of rejections ------------------------------------------------
+
+
+def test_missing_key_is_logged_without_any_credentials(client, caplog):
+    use_env(keys=KEY_A)
+
+    with caplog.at_level(logging.WARNING, logger="app.core.security"):
+        client.get("/models")
+
+    assert "no API key" in caplog.text
+
+
+def test_wrong_key_is_logged_without_echoing_it(client, caplog):
+    use_env(keys=KEY_A)
+
+    with caplog.at_level(logging.DEBUG):
+        client.get("/models", headers={"Authorization": "Bearer totally-wrong-key"})
+
+    assert "invalid API key" in caplog.text
+    assert "totally-wrong-key" not in caplog.text
+    assert KEY_A not in caplog.text
+
+
+def test_wrong_scheme_is_logged_as_no_key(client, caplog):
+    use_env(keys=KEY_A)
+
+    with caplog.at_level(logging.WARNING, logger="app.core.security"):
+        client.get("/models", headers={"Authorization": f"Basic {KEY_A}"})
+
+    assert "no API key" in caplog.text
+    assert KEY_A not in caplog.text

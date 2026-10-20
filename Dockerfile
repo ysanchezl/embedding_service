@@ -22,6 +22,10 @@ COPY config ./config
 ENV MODEL_DIR=/models
 VOLUME /models
 
+# Logs go straight to stdout so the platform (Render...) shows them as they happen.
+ENV PYTHONUNBUFFERED=1
+
 EXPOSE 8000
 
-CMD ["sh", "-c", "python -m scripts.download_model && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# --no-access-log: the app logs every request itself (with a request id and duration).
+CMD ["sh", "-c", "python -m scripts.download_model && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log"]

@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
@@ -71,14 +72,17 @@ class ModelRegistry:
                 self._local.move_to_end(alias)
                 return self._local[alias]
 
+            started = time.perf_counter()
             if self._config.is_local(alias):
                 loaded = self._load_local(alias)
+                logger.info("Model %r ready (provider=%s, loaded in %.1f s)", alias, loaded.config.provider, time.perf_counter() - started)
                 self._local[alias] = loaded
                 while len(self._local) > self._config.service.max_loaded_models:
                     evicted, _ = self._local.popitem(last=False)
                     logger.info("Model %r evicted from memory (max_loaded_models reached)", evicted)
             else:
                 loaded = self._load_remote(alias)
+                logger.info("Model %r ready (provider=%s, remote API)", alias, loaded.config.provider)
                 self._remote[alias] = loaded
             return loaded
 

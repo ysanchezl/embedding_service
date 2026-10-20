@@ -202,7 +202,31 @@ print(status["model"], status["count"], status["dimensions"])
 Los vectores de modelos distintos no se pueden mezclar ni comparar: cada colección debe indexarse y consultarse con
 el mismo modelo. Si cambias de modelo, actualiza las columnas (`vector(N)`) y reindexa.
 
-## 9. Problemas comunes
+## 9. Logs: qué ver cuando algo falla
+
+El servicio escribe una línea por evento en la salida estándar, así que aparecen tal cual en la pestaña **Logs** de Render.
+Cada petición lleva un identificador corto entre corchetes (`[67068c17]`), que además se devuelve al cliente en la
+cabecera `X-Request-ID`: si alguien reporta un problema, buscas ese identificador y ves todo lo que pasó.
+
+```
+INFO    [67068c17] app.request: POST /embed/query received
+INFO    [67068c17] app.providers.openai_compatible: Model 'x': POST /embeddings inputs=1 attempt=1/4 -> HTTP 200 in 16 ms
+INFO    [67068c17] app.request: POST /embed/query -> 200 in 73 ms
+```
+
+Qué queda registrado:
+- **Arranque:** modelo por defecto, modelos configurados, autenticación (cuántas claves, nunca su valor) y nivel de log.
+- **Cada petición:** cuándo llega y cómo termina, con el estado y los milisegundos. Los 4xx salen como `WARNING` y los 5xx como `ERROR`.
+- **Por qué se rechazó:** clave inválida o ausente, modelo desconocido, límites superados, cola llena, job inexistente.
+- **Cada llamada a un modelo por API:** nº de textos, intento (`2/4`), estado HTTP y tiempo; también reintentos y timeouts.
+  Con esto se ve enseguida si el proveedor está lento o limitando.
+- **Jobs:** creado, empezado, terminado (fragmentos y segundos) o fallido (con el motivo).
+
+Los textos, los documentos, los cuerpos de las peticiones y las claves **nunca** se escriben en los logs. Con
+`LOG_LEVEL=DEBUG` ves además el progreso de los jobs y los health checks. Los mensajes del trabajador de jobs llevan `[-]` en
+lugar de un identificador de petición: síguelos por el id del job.
+
+## 10. Problemas comunes
 
 | Síntoma | Causa y solución |
 | --- | --- |
@@ -221,7 +245,7 @@ el mismo modelo. Si cambias de modelo, actualiza las columnas (`vector(N)`) y re
 | `429` | Hay demasiados jobs en cola (`jobs.max_pending`). Reintenta más tarde. |
 | `404` al consultar un job | Caducó (`jobs.ttl_seconds`) o el servicio se reinició: los jobs viven en memoria. |
 
-## 10. Docker y despliegue
+## 11. Docker y despliegue
 
 ```bash
 docker build -t embedding-service .

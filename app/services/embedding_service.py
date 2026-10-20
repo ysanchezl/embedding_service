@@ -1,4 +1,5 @@
 import logging
+import time
 from functools import lru_cache
 from typing import Callable
 
@@ -27,7 +28,16 @@ class EmbeddingService:
         loaded = self._registry.get(model)
         cfg = loaded.config
         prefix = cfg.query_prefix if is_query else cfg.passage_prefix
-        return self._encode(loaded, [prefix + text for text in texts])
+        started = time.perf_counter()
+        vectors = self._encode(loaded, [prefix + text for text in texts])
+        logger.info(
+            "embed_texts model=%s query=%s inputs=%d done in %.0f ms",
+            loaded.alias,
+            is_query,
+            len(texts),
+            (time.perf_counter() - started) * 1000,
+        )
+        return vectors
 
     def embed_documents(
         self,
@@ -57,9 +67,20 @@ class EmbeddingService:
             for c, text in enumerate(chunk_text(document, backend.count_tokens, max_tokens, overlap))
         ]
 
+        total = len(chunks)
+        started = time.perf_counter()
+        logger.info(
+            "embed_documents model=%s documents=%d chars=%d -> chunks=%d (up to %d tokens each, batches of %d)",
+            loaded.alias,
+            len(documents),
+            sum(len(d) for d in documents),
+            total,
+            max_tokens,
+            cfg.batch_size,
+        )
+
         # Similar lengths per batch means less padding.
         order = sorted(range(len(chunks)), key=lambda i: len(chunks[i]["text"]), reverse=True)
-        total = len(chunks)
 
         for start in range(0, total, cfg.batch_size):
             batch = order[start : start + cfg.batch_size]
@@ -69,6 +90,12 @@ class EmbeddingService:
             if on_progress:
                 on_progress(min(start + cfg.batch_size, total), total)
 
+        logger.info(
+            "embed_documents model=%s done: chunks=%d in %.0f ms",
+            loaded.alias,
+            total,
+            (time.perf_counter() - started) * 1000,
+        )
         return chunks
 
     @staticmethod
