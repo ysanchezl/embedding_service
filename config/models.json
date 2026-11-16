@@ -1,13 +1,14 @@
 {
   "openrouter-nemotron-free": {
     "provider": "openai",
-    "name": "nvidia/nemotron-3-embed-1b:free",
+    "name": "nvidia/nemotron-3.5-embed-8b:free",
     "base_url": "https://openrouter.ai/api/v1",
     "api_key_env": "OPENROUTER_API_KEY",
+    "dimensions": 1024,
     "chunk_tokens": 512,
     "batch_size": 32,
     "metadata": {
-      "description": "Free embedding model hosted by OpenRouter (NVIDIA Nemotron 3 Embed 1B). 2048 dimensions, 32K-token context. Needs no credits.",
+      "description": "Free embedding model hosted by OpenRouter (NVIDIA Nemotron 3.5 Embed 8B). 4096 native dimensions, truncated to 1024 via the dimensions setting (verified against the API). 32K-token context. Needs no credits.",
       "note": "Free models can have low usage limits, quality in Spanish is unverified, and OpenRouter may use the data to train models. Switch default_model to openrouter-bge-m3 once the account has credits."
     }
   },
